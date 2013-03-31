@@ -2,98 +2,107 @@
 
 namespace BitTorrent\Announcer\Response;
 
-class AnnounceResponse extends Abstracts\ResponseAbstract {
+class AnnounceResponse extends Abstracts\ResponseAbstract
+{
+    protected $compact = true;
 
-	protected $compact = true;
+    public function __construct($response_string = null)
+    {
+        if ($response_string !== null) {
+            $this->setResponse($response_string);
+        }
+    }
 
-	function __construct($response_string = null) {
-		if($response_string !== null) {
-			$this->setResponse($response_string);
-		}
-	}
+    public function setResponse($string)
+    {
+        parent::setResponse($string);
+        $this->setPeers($this->get('peers', array()));
+    }
 
-	function setResponse($string) {
-		parent::setResponse($string);
-		$this->setPeers($this->get('peers', array()));
-	}
+    public function getInterval()
+    {
+        return $this->get('interval');
+    }
 
-	function getInterval() {
-		return $this->get('interval');
-	}
+    public function setPeers($peers)
+    {
+        $back = array();
 
-	function setPeers($peers) {
+        if (is_array($peers)) {
+            $this->setCompactMode(false);
+            $this->set('peers', $peers);
 
-		$back = array();
+            return $this;
+        }
 
-		if (is_array($peers)) {
-			$this->setCompactMode(false);
-			$this->set('peers', $peers);
-			return $this;
-		}
+        // we have compact mode here
+        $this->setCompactMode(true);
+        $peers = str_split($peers, 6);
+        foreach ($peers as $row) {
 
-		// we have compact mode here
-		$this->setCompactMode(true);
-		$peers = str_split($peers, 6);
-		foreach ($peers as $row) {
+            $peer = unpack('Nip/nport', $row);
+            $peer['ip'] = long2ip($peer['ip']);
 
-			$peer = unpack('Nip/nport', $row);
-			$peer['ip'] = long2ip($peer['ip']);
+            $back[] = $peer;
+        }
 
-			$back[] = $peer;
-		}
+        $this->set('peers', $back);
 
-		$this->set('peers', $back);
+        return $this;
+    }
 
-		return $this;
-	}
+    public function addPeer($ip, $port, $peer_id = null)
+    {
+        $peer = array_filter(array(
+            'ip' => $ip,
+            'port' => $port,
+            'peer_id' => $peer_id,
+        ));
 
-	function addPeer($ip, $port, $peer_id = null) {
+        // empty one
+        if (!isset($this->response['peers'])) {
+            $this->response['peers'] = array();
+        }
 
-		$peer = array_filter(array(
-			'ip' => $ip,
-			'port' => $port,
-			'peer_id' => $peer_id,
-		));
+        $this->response['peers'][] = $peer;
 
-		// empty one
-		if(!isset($this->response['peers'])) {
-			$this->response['peers'] = array();
-		}
+        return $this;
+    }
 
-		$this->response['peers'][] = $peer;
+    public function getPeers()
+    {
+        return $this->get('peers', array());
+    }
 
-		return $this;
-	}
+    public function getPeersCount()
+    {
+        return count($this->getPeers());
+    }
 
-	function getPeers() {
-		return $this->get('peers', array());
-	}
+    public function setCompactMode($is_compact)
+    {
+        $this->compact = $is_compact;
 
-	function getPeersCount() {
-		return count($this->getPeers());
-	}
+        return $this;
+    }
 
-	public function setCompactMode($is_compact) {
-		$this->compact = $is_compact;
-		return $this;
-	}
+    public function isCompactMode()
+    {
+        return $this->compact;
+    }
 
-	public function isCompactMode() {
-		return $this->compact;
-	}
+    public function render()
+    {
+        $response = $this->response;
 
-	function render() {
+        if ($this->isCompactMode() == true and $this->getPeersCount() > 0) {
+            $response['peers'] = '';
+            foreach ($this->getPeers() as $peer) {
+                $response['peers'] .= pack('Nn', ip2long($peer['ip']), $peer['port']);
+            }
+        }
 
-		$response = $this->response;
-
-		if($this->isCompactMode() == true and $this->getPeersCount() > 0) {
-			$response['peers'] = '';
-			foreach($this->getPeers() as $peer) {
-				$response['peers'] .= pack('Nn', ip2long($peer['ip']), $peer['port']);
-			}
-		}
-
-		return $this->renderer($response);
-	}
+        return $this->renderer($response);
+    }
 
 }

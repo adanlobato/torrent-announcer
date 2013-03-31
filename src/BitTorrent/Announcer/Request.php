@@ -7,263 +7,276 @@ use BitTorrent\Announcer\Client\Abstracts\TorrentClientInterface;
 
 use Buzz\Browser;
 
-class Request {
+class Request
+{
+    /** @var Torrent */
+    private $torrent_file;
 
-	/** @var Torrent */
-	private $torrent_file;
+    /** @var  TorrentClientInterface */
+    private $torrent_client;
 
-	/** @var  TorrentClientInterface */
-	private $torrent_client;
+    /** @var RequestParameter */
+    public $parameter;
 
-	/** @var RequestParameter */
-	var $parameter;
+    private $announce_url;
 
-	private $announce_url;
+    private $browser;
 
+    public function __construct()
+    {
+        $this->setParameter(new RequestParameter());
+    }
 
-	private $browser;
+    private function generateParameter()
+    {
+        $parameter = $this->parameter->toArray();
 
-	function __construct() {
-		$this->setParameter(new RequestParameter());
-	}
+        $parameter['info_hash'] = pack("H*", $this->parameter->getInfoHash());
+        $parameter['peer_id'] = $this->torrent_client->getPeerId();
 
-	private function generateParameter() {
+        $parameter['compact'] = $this->torrent_client->getCompact();
+        $parameter['no_peer_id'] = $this->torrent_client->getNoPeerId();
 
-		$parameter = $this->parameter->toArray();
+        $parameter['port'] = $this->torrent_client->getPeerPort();
+        $parameter['numwant'] = $this->torrent_client->getNumwant();
 
-		$parameter['info_hash'] = pack("H*", $this->parameter->getInfoHash());
-		$parameter['peer_id'] = $this->torrent_client->getPeerId();
+        if ($peer_id = $this->torrent_client->getPeerKey()) {
+            $parameter['key'] = $peer_id;
+        }
 
-		$parameter['compact'] = $this->torrent_client->getCompact();
-		$parameter['no_peer_id'] = $this->torrent_client->getNoPeerId();
+        return http_build_query($parameter);
+    }
 
-		$parameter['port'] = $this->torrent_client->getPeerPort();
-		$parameter['numwant'] = $this->torrent_client->getNumwant();
+    public function getUrl()
+    {
+        $announce_url = $this->getAnnounceUrl();
+        $query_parameter = $this->generateParameter();
 
-		if ($peer_id = $this->torrent_client->getPeerKey()) {
-			$parameter['key'] = $peer_id;
-		}
+        $url_parsed = parse_url($announce_url);
 
-		return http_build_query($parameter);
-	}
+        $query_parameter = (!isset($url_parsed["query"]) ? '?' : '&') . $query_parameter;
 
-	function getUrl() {
-		$announce_url = $this->getAnnounceUrl();
-		$query_parameter = $this->generateParameter();
+        return $announce_url . $query_parameter;
 
-		$url_parsed = parse_url($announce_url);
+    }
 
-		$query_parameter = (!isset($url_parsed["query"]) ? '?' : '&') . $query_parameter;
+    /**
+     * @return Response\AnnounceResponse
+     */
+    public function announce()
+    {
+        $this->validateRequest();
 
-		return $announce_url . $query_parameter;
+        $url = $this->getUrl();
 
-	}
+        return new Response\AnnounceResponse($this->sendRequest($url)->getContent());
+    }
 
-	/**
-	 * @return Response\AnnounceResponse
-	 */
-	function announce() {
-		$this->validateRequest();
+    public function scrape()
+    {
+        $announce_url = str_replace('announce', 'scrape', $this->getAnnounceUrl());
 
-		$url = $this->getUrl();
+        $url_parsed = parse_url($announce_url);
 
-		return new Response\AnnounceResponse($this->sendRequest($url)->getContent());
-	}
+        $query_parameter = (!isset($url_parsed["query"]) ? '?' : '&') . 'info_hash=' . urlencode(pack("H*", $this->parameter->getInfoHash()));
 
-	function scrape() {
+        $url = $announce_url . $query_parameter;
 
-		$announce_url = str_replace('announce', 'scrape', $this->getAnnounceUrl());
+        return new Response\ScrapeResponse($this->sendRequest($url)->getContent());
+    }
 
-		$url_parsed = parse_url($announce_url);
+    /**
+     * @param $url
+     * @return \Buzz\Message\Response
+     */
+    private function sendRequest($url)
+    {
+        /** @var $response \Buzz\Message\Response */
+        $response = $this->getBrowser()->get($url, $this->getTorrentClientHeader());
+        $this->decompressContent($response);
 
-		$query_parameter = (!isset($url_parsed["query"]) ? '?' : '&') . 'info_hash=' . urlencode(pack("H*", $this->parameter->getInfoHash()));
+        return $response;
+    }
 
-		$url = $announce_url . $query_parameter;
+    private function getTorrentClientHeader()
+    {
+        $headers = array();
 
-		return new Response\ScrapeResponse($this->sendRequest($url)->getContent());
-	}
+        if ($this->torrent_client->getUserAgent()) {
+            $headers['User-Agent'] = $this->torrent_client->getUserAgent();
+        }
 
-	/**
-	 * @param $url
-	 * @return \Buzz\Message\Response
-	 */
-	private function sendRequest($url) {
+        $headers = array_merge($headers, (array) $this->torrent_client->getExtraHeader());
 
-		/** @var $response \Buzz\Message\Response */
-		$response = $this->getBrowser()->get($url, $this->getTorrentClientHeader());
-		$this->decompressContent($response);
+        return $headers;
+    }
 
-		return $response;
-	}
+    private function getBrowser()
+    {
+        if (!$this->browser) {
+            $this->browser = new Browser();
+            $this->browser->setClient(new \Buzz\Client\Curl());
+        }
 
-	private function getTorrentClientHeader() {
+        return $this->browser;
+    }
 
-		$headers = array();
+    private function decompressContent(\Buzz\Message\MessageInterface $response)
+    {
+        if (!$content_encoding = $response->getHeader('Content-Encoding')) {
+            return;
+        }
 
-		if ($this->torrent_client->getUserAgent()) {
-			$headers['User-Agent'] = $this->torrent_client->getUserAgent();
-		}
+        $content = $response->getContent();
 
-		$headers = array_merge($headers, (array)$this->torrent_client->getExtraHeader());
+        if (strpos($content_encoding, 'deflate') !== false) {
+            $content = gzuncompress($content);
+        }
 
-		return $headers;
-	}
+        if (strpos($content_encoding, 'gzip') !== false) {
+            $content = gzinflate(substr($content, 10));
+        }
 
-	private function getBrowser() {
+        $response->setContent($content);
 
-		if(!$this->browser) {
-			$this->browser = new Browser();
-			$this->browser->setClient(new \Buzz\Client\Curl());
-		}
+    }
 
-		return $this->browser;
-	}
+    public function setAnnounceUrl($announce_url)
+    {
+        $this->announce_url = $announce_url;
 
-	private function decompressContent(\Buzz\Message\MessageInterface $response) {
+        return $this;
+    }
 
-		if (!$content_encoding = $response->getHeader('Content-Encoding')) {
-			return;
-		}
+    public function getAnnounceUrl()
+    {
+        return $this->announce_url;
+    }
 
-		$content = $response->getContent();
+    public function validateRequest()
+    {
+        if (!$this->getAnnounceUrl()) {
+            throw new \RuntimeException('no announce url found');
+        }
 
-		if (strpos($content_encoding, 'deflate') !== false) {
-			$content = gzuncompress($content);
-		}
+        if (!$this->parameter->getInfoHash()) {
+            throw new \RuntimeException('no info_hash found');
+        }
 
-		if (strpos($content_encoding, 'gzip') !== false) {
-			$content = gzinflate(substr($content, 10));
-		}
+        if (!$this->torrent_client->getPeerId()) {
+            throw new \RuntimeException('no peer_id found');
+        }
 
-		$response->setContent($content);
+        if ($this->parameter->getEvent() == RequestParameter::EVENT_START) {
 
-	}
+            if ($this->parameter->getDownloaded() > 0 OR $this->parameter->getUploaded() > 0) {
+                throw new \RuntimeException('started event cant have downloaded or uploaded != 0');
+            }
 
-	public function setAnnounceUrl($announce_url) {
-		$this->announce_url = $announce_url;
-		return $this;
-	}
+        }
 
-	public function getAnnounceUrl() {
-		return $this->announce_url;
-	}
+        if ($this->getTorrentFile()) {
 
-	function validateRequest() {
+            if ($this->parameter->getDownloaded() > $this->getTorrentFile()->getSize()) {
+                throw new \RuntimeException('downloaded cant be greater the torrent size');
+            }
 
-		if(!$this->getAnnounceUrl()) {
-			throw new \RuntimeException('no announce url found');
-		}
+            if ($this->parameter->getUploaded() > $this->getTorrentFile()->getSize()) {
+                throw new \RuntimeException('uploaded cant be greater the torrent size');
+            }
 
-		if (!$this->parameter->getInfoHash()) {
-			throw new \RuntimeException('no info_hash found');
-		}
+        }
 
-		if (!$this->torrent_client->getPeerId()) {
-			throw new \RuntimeException('no peer_id found');
-		}
+    }
 
-		if ($this->parameter->getEvent() == RequestParameter::EVENT_START) {
+    public function setTorrentFile(Torrent $torrent)
+    {
+        $this->torrent_file = $torrent;
+        $this->setAnnounceUrl(static::findTorrentFileAnnounceUrl($torrent));
+        $this->parameter->setInfoHash($torrent->getHash());
 
-			if ($this->parameter->getDownloaded() > 0 OR $this->parameter->getUploaded() > 0) {
-				throw new \RuntimeException('started event cant have downloaded or uploaded != 0');
-			}
+        return $this;
+    }
 
-		}
+    public function getTorrentFile()
+    {
+        return $this->torrent_file;
+    }
 
-		if ($this->getTorrentFile()) {
+    public function setTorrentClient(TorrentClientInterface $client)
+    {
+        $this->torrent_client = $client;
 
-			if ($this->parameter->getDownloaded() > $this->getTorrentFile()->getSize()) {
-				throw new \RuntimeException('downloaded cant be greater the torrent size');
-			}
+        return $this;
+    }
 
-			if ($this->parameter->getUploaded() > $this->getTorrentFile()->getSize()) {
-				throw new \RuntimeException('uploaded cant be greater the torrent size');
-			}
+    public function getTorrentClient()
+    {
+        return $this->torrent_client;
+    }
 
-		}
+    public static function findTorrentFileAnnounceUrl(Torrent $torrent)
+    {
+        if ($url = $torrent->getAnnounce()) {
+            return $url;
+        }
 
-	}
+        if (count($urls = $torrent->getAnnounceList()) > 0) {
+            return $urls[0];
+        }
 
-	function setTorrentFile(Torrent $torrent) {
-		$this->torrent_file = $torrent;
-		$this->setAnnounceUrl(static::findTorrentFileAnnounceUrl($torrent));
-		$this->parameter->setInfoHash($torrent->getHash());
-		return $this;
-	}
+        throw new \RuntimeException('Cant find announce url');
 
-	function getTorrentFile() {
-		return $this->torrent_file;
-	}
+    }
 
-	function setTorrentClient(TorrentClientInterface $client) {
-		$this->torrent_client = $client;
-		return $this;
-	}
+    public static function createOnTorrent($torrent, TorrentClientInterface $client = null)
+    {
+        $self = new static();
 
-	function getTorrentClient() {
-		return $this->torrent_client;
-	}
+        if ($client !== null) {
+            $self->setTorrentClient($client);
+        }
 
-	static function findTorrentFileAnnounceUrl(Torrent $torrent) {
+        if (is_string($torrent)) {
+            $torrent = Torrent::createFromTorrentFile($torrent);
+        }
 
-		if($url = $torrent->getAnnounce()) {
-			return $url;
-		}
+        if (!$torrent instanceof Torrent) {
+            throw new \RuntimeException('Unknown Torrent file');
+        }
 
-		if (count($urls = $torrent->getAnnounceList()) > 0) {
-			return $urls[0];
-		}
+        return $self->setTorrentFile($torrent);
+    }
 
-		throw new \RuntimeException('Cant find announce url');
+    public static function createFromRequestArray(TorrentClientInterface $client = null, $array = null)
+    {
+        $self = new static();
 
-	}
+        if ($array === null) {
+            $array = $_GET;
+        }
 
-	static function createOnTorrent($torrent, TorrentClientInterface $client = null) {
-		$self = new static();
+        if ($client !== null) {
+            $self->setTorrentClient($client);
+        }
 
-		if($client !== null) {
-			$self->setTorrentClient($client);
-		}
+        if (isset($array['announce'])) {
+            $array['announce'] = base64_decode($array['announce']);
+            $self->setAnnounceUrl($array['announce']);
+        }
 
-		if(is_string($torrent)) {
-			$torrent = Torrent::createFromTorrentFile($torrent);
-		}
+        if (isset($array['info_hash'])) {
+            $array['info_hash'] = current(unpack('H*', $array['info_hash']));
+        }
 
-		if(!$torrent instanceof Torrent) {
-			throw new \RuntimeException('Unknown Torrent file');
-		}
+        $self->parameter->setParameters($array);
 
-		return $self->setTorrentFile($torrent);
-	}
+        return $self;
+    }
 
-	static function createFromRequestArray(TorrentClientInterface $client = null, $array = null) {
-
-		$self = new static();
-
-		if($array === null) {
-			$array = $_GET;
-		}
-
-		if ($client !== null) {
-			$self->setTorrentClient($client);
-		}
-
-		if (isset($array['announce'])) {
-			$array['announce'] = base64_decode($array['announce']);
-			$self->setAnnounceUrl($array['announce']);
-		}
-
-		if (isset($array['info_hash'])) {
-			$array['info_hash'] = current(unpack('H*', $array['info_hash']));
-		}
-
-		$self->parameter->setParameters($array);
-		return $self;
-	}
-
-	function setParameter(RequestParameter $parameter) {
-		$this->parameter = $parameter;
-	}
+    public function setParameter(RequestParameter $parameter)
+    {
+        $this->parameter = $parameter;
+    }
 
 }
-

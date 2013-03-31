@@ -2,29 +2,29 @@
 
 namespace BitTorrent\Announcer\Client\Abstracts;
 
-interface TorrentClientInterface {
+interface TorrentClientInterface
+{
+    public function getUserAgent();
+    public function getExtraHeader();
+    public function generateKey();
+    public function generateId();
 
-	function getUserAgent();
-	function getExtraHeader();
-	function generateKey();
-	function generateId();
+    public function supportsVersion($version);
 
-	function supportsVersion($version);
+    public function setVersion($version);
+    public function getVersion();
+    public function setPeerId($peer_id);
+    public function getPeerId();
+    public function setPeerKey($peer_key);
+    public function getPeerKey();
+    public function setPeerPort($peer_port);
+    public function getPeerPort();
 
-	function setVersion($version);
-	function getVersion();
-	function setPeerId($peer_id);
-	function getPeerId();
-	function setPeerKey($peer_key);
-	function getPeerKey();
-	function setPeerPort($peer_port);
-	function getPeerPort();
-
-	function setCompact($compact);
-	function getCompact();
-	function setNoPeerId($no_peer_id);
-	function getNoPeerId();
-	function setNumwant($numwant);
-	function getNumwant();
+    public function setCompact($compact);
+    public function getCompact();
+    public function setNoPeerId($no_peer_id);
+    public function getNoPeerId();
+    public function setNumwant($numwant);
+    public function getNumwant();
 
 }

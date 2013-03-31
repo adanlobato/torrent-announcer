@@ -2,68 +2,74 @@
 
 namespace BitTorrent\Announcer\Client;
 
-class TransmissionClient extends Abstracts\TorrentClientAbstract implements Abstracts\TorrentClientInterface {
+class TransmissionClient extends Abstracts\TorrentClientAbstract implements Abstracts\TorrentClientInterface
+{
+    /**
+     * Big change on 0.8 >=
+     *
+     * @link: https://trac.transmissionbt.com/wiki/PeerId
+     * @var string
+     */
+    protected $version = '0.6';
 
-	/**
-	 * Big change on 0.8 >=
-	 *
-	 * @link: https://trac.transmissionbt.com/wiki/PeerId
-	 * @var string
-	 */
-	protected $version = '0.6';
+    public function getKeyTokens()
+    {
+        return 'abcdefghijklmnopqrstuvwxyz0123456789';
+    }
 
-	function getKeyTokens() {
-		return 'abcdefghijklmnopqrstuvwxyz0123456789';
-	}
+    public function generateKey()
+    {
+        return $this->getPeerTokens(8);
+    }
 
-	function generateKey() {
-		return $this->getPeerTokens(8);
-	}
+    public function generateId()
+    {
+        if ($this->version == '0.6') {
+            return '-TR0006-' . $this->getPeerTokens(12);
+        }
 
-	function generateId() {
+        // -TR1330- Official 1.33 release
+        // -TR2030- Official 2.03 release
+        // -TR2300- Official 2.3 release!?
+        list($major, $minor) = explode('.', $this->version);
 
-		if ($this->version == '0.6') {
-			return '-TR0006-' . $this->getPeerTokens(12);
-		}
+        return '-TR' . $major . str_pad($minor, 2, '0') . '0-' . $this->getPeerTokens(12);
+    }
 
-		// -TR1330- Official 1.33 release
-		// -TR2030- Official 2.03 release
-		// -TR2300- Official 2.3 release!?
-		list($major, $minor) = explode('.', $this->version);
-		return '-TR' . $major . str_pad($minor, 2, '0') . '0-' . $this->getPeerTokens(12);
-	}
+    public function getUserAgent()
+    {
+        if ($this->version == '0.6') {
+            return 'Transmission/0.6';
+        }
 
-	function getUserAgent() {
+        // Transmission/1.32 (6455) Official 1.32 release
+        return 'Transmission/' . $this->version;
+    }
 
-		if($this->version == '0.6') {
-			return 'Transmission/0.6';
-		}
+    public function getExtraHeader()
+    {
+        return array(
+            'Content-length' => '0',
+            'Connection' => 'close',
+        );
+    }
 
-		// Transmission/1.32 (6455) Official 1.32 release
-		return 'Transmission/' . $this->version;
-	}
+    public function getExtraParameter()
+    {
+        $parms = array();
 
-	function getExtraHeader() {
-		return array(
-			'Content-length' => '0',
-			'Connection' => 'close',
-		);
-	}
+        if (version_compare($this->version, '1.5', '>=')) {
+            $parms = array(
+                'supportcrypto' => 1,
+            );
+        }
 
-	function getExtraParameter() {
-		$parms = array();
+        return $parms;
+    }
 
-		if(version_compare($this->version, '1.5', '>=')) {
-			$parms = array(
-				'supportcrypto' => 1,
-			);
-		}
-
-		return $parms;
-	}
-
-	function supportsVersion($version) {
-		return $version == '0.6' OR version_compare($version, '1', '>=');
-	}
+    public function supportsVersion($version)
+    {
+        return $version == '0.6' OR version_compare($version, '1', '>=');
+    }
 
 }

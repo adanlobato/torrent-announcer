@@ -2,110 +2,125 @@
 
 namespace BitTorrent\Announcer;
 
+class RequestParameter
+{
+    const EVENT_START = 'started';
+    const EVENT_UPDATE = 'update';
+    const EVENT_STOP = 'stopped';
+    const EVENT_COMPLETE = 'completed';
 
-class RequestParameter {
+    private $parameters = array(
+        'uploaded' => 0,
+        'downloaded' => 0,
+        'left' => 0,
+        'info_hash' => null,
+        'event' => self::EVENT_START,
+    );
 
-	const EVENT_START = 'started';
-	const EVENT_UPDATE = 'update';
-	const EVENT_STOP = 'stopped';
-	const EVENT_COMPLETE = 'completed';
+    public function setInfoHash($value)
+    {
+        if (strlen($value) != 40 OR !preg_match("/^[a-f0-9]{1,}$/is", $value)) {
+            throw new \RuntimeException('invalid info_hash given');
+        }
 
-	private $parameters = array(
-		'uploaded' => 0,
-		'downloaded' => 0,
-		'left' => 0,
-		'info_hash' => null,
-		'event' => self::EVENT_START,
-	);
+        return $this->set('info_hash', $value);
+    }
 
-	function setInfoHash($value) {
+    public function getInfoHash()
+    {
+        return $this->get('info_hash');
+    }
 
-		if (strlen($value) != 40 OR !preg_match("/^[a-f0-9]{1,}$/is", $value)) {
-			throw new \RuntimeException('invalid info_hash given');
-		}
+    public function setEvent($value)
+    {
+        return $this->set('event', $value);
+    }
 
-		return $this->set('info_hash', $value);
-	}
+    public function getEvent()
+    {
+        return $this->get('event', 'update');
+    }
 
-	function getInfoHash() {
-		return $this->get('info_hash');
-	}
+    public function setDownloaded($value)
+    {
+        return $this->set('downloaded', $value);
+    }
 
-	function setEvent($value) {
-		return $this->set('event', $value);
-	}
+    public function getDownloaded()
+    {
+        return $this->get('downloaded');
+    }
 
-	function getEvent() {
-		return $this->get('event', 'update');
-	}
+    public function setLeft($value)
+    {
+        return $this->set('left', $value);
+    }
 
-	function setDownloaded($value) {
-		return $this->set('downloaded', $value);
-	}
+    public function getLeft()
+    {
+        return $this->get('left');
+    }
 
-	function getDownloaded() {
-		return $this->get('downloaded');
-	}
+    public function setUploaded($value)
+    {
+        return $this->set('uploaded', $value);
+    }
 
-	function setLeft($value) {
-		return $this->set('left', $value);
-	}
+    public function getUploaded()
+    {
+        return $this->get('uploaded');
+    }
 
-	function getLeft() {
-		return $this->get('left');
-	}
+    public function getParameters()
+    {
+        return $this->parameters;
+    }
 
-	function setUploaded($value) {
-		return $this->set('uploaded', $value);
-	}
+    public function setParameters($parameters)
+    {
+        if (isset($parameters['info_hash']) && !preg_match("/^[a-f0-9]{1,}$/is", $parameters['info_hash'])) {
+            $parameters['info_hash'] = current(unpack('H*', $parameters['info_hash']));
+        }
 
-	function getUploaded() {
-		return $this->get('uploaded');
-	}
+        $this->parameters = $parameters;
 
-	function getParameters() {
-		return $this->parameters;
-	}
+        return $this;
+    }
 
-	function setParameters($parameters) {
+    public function toArray()
+    {
+        $parameter = array(
+            'info_hash' => $this->getInfoHash(),
+            'uploaded' => $this->getUploaded(),
+            'downloaded' => $this->getDownloaded(),
+            'left' => $this->getLeft(),
+        );
 
-		if(isset($parameters['info_hash']) && !preg_match("/^[a-f0-9]{1,}$/is", $parameters['info_hash'])) {
-			$parameters['info_hash'] = current(unpack('H*', $parameters['info_hash']));
-		}
+        if ($this->getEvent() && $this->getEvent() != self::EVENT_UPDATE) {
+            $parameter['event'] = $this->getEvent();
+        }
 
-		$this->parameters = $parameters;
-		return $this;
-	}
+        return $parameter;
+    }
 
-	function toArray() {
+    public function set($key, $value)
+    {
+        $this->parameters[$key] = $value;
 
-		$parameter = array(
-			'info_hash' => $this->getInfoHash(),
-			'uploaded' => $this->getUploaded(),
-			'downloaded' => $this->getDownloaded(),
-			'left' => $this->getLeft(),
-		);
+        return $this;
+    }
 
-		if ($this->getEvent() && $this->getEvent() != self::EVENT_UPDATE) {
-			$parameter['event'] = $this->getEvent();
-		}
+    public static function createFromArray($array)
+    {
+        $self = new static();
+        $self->setParameters($array);
 
-		return $parameter;
-	}
+        return $self;
+    }
 
-	function set($key, $value) {
-		$this->parameters[$key] = $value;
-		return $this;
-	}
-
-	static function createFromArray($array) {
-		$self = new static();
-		$self->setParameters($array);
-		return $self;
-	}
-
-	function get($key, $default = null) {
-		return isset($this->parameters[$key]) ? $this->parameters[$key] : $default;
-	}
+    public function get($key, $default = null)
+    {
+        return isset($this->parameters[$key]) ? $this->parameters[$key] : $default;
+    }
 
 }

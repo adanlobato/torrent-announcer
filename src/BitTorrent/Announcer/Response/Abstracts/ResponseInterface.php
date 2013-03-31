@@ -2,7 +2,8 @@
 
 namespace BitTorrent\Announcer\Response\Abstracts;
 
-interface ResponseInterface {
-	function setResponse($string);
-	function render();
+interface ResponseInterface
+{
+    public function setResponse($string);
+    public function render();
 }
